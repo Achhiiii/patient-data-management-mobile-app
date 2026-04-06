@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../services/patient_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -12,37 +14,64 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   bool _isMonthly = true;
+  late Future<Map<String, dynamic>> _analyticsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _analyticsFuture = PatientService.instance.getAnalytics();
+  }
+
+  void _refresh() {
+    setState(() {
+      _analyticsFuture = PatientService.instance.getAnalytics();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: _buildAppBar(),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Hospital Analytics', style: AppTextStyles.headlineMd),
-            Text('Overview', style: AppTextStyles.headlineMd.copyWith(color: AppColors.primary)),
-            const SizedBox(height: 8),
-            Text(
-              'Real-time patient demographic distribution and volume.',
-              style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+      body: FutureBuilder<Map<String, dynamic>>(
+        future: _analyticsFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final data = snapshot.data ?? {};
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hospital Analytics', style: AppTextStyles.headlineMd),
+                Text('Overview', style: AppTextStyles.headlineMd.copyWith(color: AppColors.primary)),
+                const SizedBox(height: 8),
+                Text(
+                  'Patient demographic distribution and volume.',
+                  style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+                ),
+                const SizedBox(height: 28),
+                _buildTotalCensusCard(data),
+                const SizedBox(height: 20),
+                _buildGenderDistributionCard(data),
+                const SizedBox(height: 20),
+                _buildAgeGroupCard(data),
+              ],
             ),
-            const SizedBox(height: 28),
-            _buildTotalCensusCard(),
-            const SizedBox(height: 20),
-            _buildGenderDistributionCard(),
-            const SizedBox(height: 20),
-            _buildAgeGroupCard(),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
 
   PreferredSizeWidget _buildAppBar() {
+    final user = AuthService.instance.currentUser;
+    final initials = user != null
+        ? user.fullName.trim().split(' ').take(2).map((p) => p[0].toUpperCase()).join()
+        : '?';
+
     return AppBar(
       backgroundColor: AppColors.surface,
       automaticallyImplyLeading: false,
@@ -66,6 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
       actions: [
+        IconButton(onPressed: _refresh, icon: const Icon(Icons.refresh_rounded, size: 22)),
         Container(
           width: 36,
           height: 36,
@@ -74,10 +104,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             color: AppColors.primary,
             shape: BoxShape.circle,
           ),
-          child: const Center(
+          child: Center(
             child: Text(
-              'DS',
-              style: TextStyle(
+              initials,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
@@ -89,7 +119,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildTotalCensusCard() {
+  Widget _buildTotalCensusCard(Map<String, dynamic> data) {
+    final total = data['total'] as int? ?? 0;
+    final critical = data['critical'] as int? ?? 0;
+    final stable = data['stable'] as int? ?? 0;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -132,32 +166,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           const SizedBox(height: 12),
           Text(
-            '1,402',
+            '$total',
             style: AppTextStyles.displayLg.copyWith(
               color: AppColors.primary,
               fontSize: 48,
             ),
           ),
           Text(
-            'Active Patients',
+            'Registered Patients',
             style: AppTextStyles.bodyMd.copyWith(color: AppColors.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(
-                Icons.trending_up_rounded,
-                color: AppColors.stableGreen,
-                size: 16,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '+4% from last month',
-                style: AppTextStyles.labelMd.copyWith(
-                  color: AppColors.stableGreen,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              _statPill('$stable Stable', AppColors.stableGreen, AppColors.stableGreenContainer),
+              const SizedBox(width: 8),
+              _statPill('$critical Critical', AppColors.error, AppColors.errorContainer),
             ],
           ),
         ],
@@ -165,7 +189,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildGenderDistributionCard() {
+  Widget _statPill(String label, Color text, Color bg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
+      child: Text(label, style: AppTextStyles.labelMd.copyWith(color: text, fontWeight: FontWeight.w600)),
+    );
+  }
+
+  Widget _buildGenderDistributionCard(Map<String, dynamic> data) {
+    final total = (data['total'] as int? ?? 0);
+    final female = data['female'] as int? ?? 0;
+    final male = data['male'] as int? ?? 0;
+
+    final femalePercent = total == 0 ? 0.0 : (female / total * 100);
+    final malePercent = total == 0 ? 0.0 : (male / total * 100);
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -184,65 +223,74 @@ class _DashboardScreenState extends State<DashboardScreen> {
         children: [
           Text('Gender Distribution', style: AppTextStyles.headlineSm),
           const SizedBox(height: 20),
-          SizedBox(
-            height: 180,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                PieChart(
-                  PieChartData(
-                    sections: [
-                      PieChartSectionData(
-                        value: 58,
-                        color: AppColors.primary,
-                        title: '',
-                        radius: 52,
+          if (total == 0)
+            Center(
+              child: Text(
+                'No data yet',
+                style: AppTextStyles.bodyMd.copyWith(color: AppColors.onSurfaceVariant),
+              ),
+            )
+          else ...[
+            SizedBox(
+              height: 180,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  PieChart(
+                    PieChartData(
+                      sections: [
+                        PieChartSectionData(
+                          value: female.toDouble(),
+                          color: AppColors.primary,
+                          title: '',
+                          radius: 52,
+                        ),
+                        PieChartSectionData(
+                          value: male.toDouble(),
+                          color: AppColors.surfaceContainerHighest,
+                          title: '',
+                          radius: 48,
+                        ),
+                      ],
+                      centerSpaceRadius: 52,
+                      sectionsSpace: 3,
+                    ),
+                  ),
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$total',
+                        style: AppTextStyles.titleMd.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w800,
+                        ),
                       ),
-                      PieChartSectionData(
-                        value: 42,
-                        color: AppColors.surfaceContainerHighest,
-                        title: '',
-                        radius: 48,
+                      Text(
+                        'TOTAL',
+                        style: AppTextStyles.labelSm.copyWith(letterSpacing: 1.0),
                       ),
                     ],
-                    centerSpaceRadius: 52,
-                    sectionsSpace: 3,
                   ),
-                ),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '1,402',
-                      style: AppTextStyles.titleMd.copyWith(
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    Text(
-                      'TOTAL ACTIVE',
-                      style: AppTextStyles.labelSm.copyWith(letterSpacing: 1.0),
-                    ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 16),
-          _buildGenderLegendItem(
-            color: AppColors.primary,
-            label: 'Female',
-            percentage: '58%',
-            count: '813 patients',
-          ),
-          const SizedBox(height: 10),
-          _buildGenderLegendItem(
-            color: AppColors.surfaceContainerHighest,
-            label: 'Male',
-            percentage: '42%',
-            count: '589 patients',
-            textColor: AppColors.onSurface,
-          ),
+            const SizedBox(height: 16),
+            _buildGenderLegendItem(
+              color: AppColors.primary,
+              label: 'Female',
+              percentage: '${femalePercent.toStringAsFixed(0)}%',
+              count: '$female patients',
+            ),
+            const SizedBox(height: 10),
+            _buildGenderLegendItem(
+              color: AppColors.surfaceContainerHighest,
+              label: 'Male',
+              percentage: '${malePercent.toStringAsFixed(0)}%',
+              count: '$male patients',
+              textColor: AppColors.onSurface,
+            ),
+          ],
         ],
       ),
     );
@@ -289,7 +337,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _buildAgeGroupCard() {
+  Widget _buildAgeGroupCard(Map<String, dynamic> data) {
+    final groups = [
+      data['age0to18'] as int? ?? 0,
+      data['age19to35'] as int? ?? 0,
+      data['age36to50'] as int? ?? 0,
+      data['age51to70'] as int? ?? 0,
+      data['age70plus'] as int? ?? 0,
+    ];
+    final maxVal = groups.reduce((a, b) => a > b ? a : b);
+
+    // Find largest group
+    int largestIdx = 0;
+    for (int i = 1; i < groups.length; i++) {
+      if (groups[i] > groups[largestIdx]) largestIdx = i;
+    }
+    const groupLabels = ['0-18', '19-35', '36-50', '51-70', '70+'];
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -314,97 +378,85 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
-            height: 180,
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY: 60,
-                barTouchData: BarTouchData(enabled: false),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        const labels = ['0-18', '19-35', '36-50', '51-70', '70+'];
-                        final idx = value.toInt();
-                        if (idx < 0 || idx >= labels.length) return const SizedBox();
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            labels[idx],
-                            style: AppTextStyles.labelSm,
-                          ),
-                        );
-                      },
+          if (maxVal == 0)
+            Center(
+              child: Text(
+                'No patient data yet',
+                style: AppTextStyles.bodyMd.copyWith(color: AppColors.onSurfaceVariant),
+              ),
+            )
+          else
+            SizedBox(
+              height: 180,
+              child: BarChart(
+                BarChartData(
+                  alignment: BarChartAlignment.spaceAround,
+                  maxY: maxVal.toDouble() * 1.2 + 1,
+                  barTouchData: BarTouchData(enabled: false),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final idx = value.toInt();
+                          if (idx < 0 || idx >= groupLabels.length) return const SizedBox();
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(groupLabels[idx], style: AppTextStyles.labelSm),
+                          );
+                        },
+                      ),
+                    ),
+                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: AppColors.surfaceContainerHighest,
+                      strokeWidth: 1,
                     ),
                   ),
-                  leftTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
+                  borderData: FlBorderData(show: false),
+                  barGroups: groups.asMap().entries.map((e) {
+                    return BarChartGroupData(
+                      x: e.key,
+                      barRods: [
+                        BarChartRodData(
+                          toY: e.value.toDouble(),
+                          color: e.key == largestIdx
+                              ? AppColors.primary
+                              : AppColors.surfaceContainerHighest,
+                          width: 28,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ],
+                    );
+                  }).toList(),
                 ),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: AppColors.surfaceContainerHighest,
-                    strokeWidth: 1,
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                barGroups: _isMonthly ? _monthlyBarGroups() : _weeklyBarGroups(),
               ),
             ),
-          ),
           const SizedBox(height: 12),
-          Center(
-            child: Text(
-              '38%',
-              style: AppTextStyles.headlineSm.copyWith(color: AppColors.primary),
+          if (maxVal > 0) ...[
+            Center(
+              child: Text(
+                '${groups[largestIdx]} patients',
+                style: AppTextStyles.headlineSm.copyWith(color: AppColors.primary),
+              ),
             ),
-          ),
-          Center(
-            child: Text(
-              'largest age group (19-35)',
-              style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+            Center(
+              child: Text(
+                'largest age group (${groupLabels[largestIdx]})',
+                style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
-  }
-
-  List<BarChartGroupData> _monthlyBarGroups() {
-    final values = [22.0, 38.0, 28.0, 32.0, 18.0];
-    return _buildBarGroups(values);
-  }
-
-  List<BarChartGroupData> _weeklyBarGroups() {
-    final values = [15.0, 30.0, 22.0, 25.0, 12.0];
-    return _buildBarGroups(values);
-  }
-
-  List<BarChartGroupData> _buildBarGroups(List<double> values) {
-    return values.asMap().entries.map((e) {
-      return BarChartGroupData(
-        x: e.key,
-        barRods: [
-          BarChartRodData(
-            toY: e.value,
-            color: e.key == 1 ? AppColors.primary : AppColors.surfaceContainerHighest,
-            width: 28,
-            borderRadius: BorderRadius.circular(6),
-          ),
-        ],
-      );
-    }).toList();
   }
 
   Widget _buildToggle() {

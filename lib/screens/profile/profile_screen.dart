@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
@@ -12,22 +13,87 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  bool _obscureCurrent = true;
   bool _obscureNew = true;
   bool _obscureConfirm = true;
-  final _usernameController = TextEditingController(text: 'dr.smith.medical');
+  bool _isSaving = false;
+  String? _errorMessage;
+  String? _successMessage;
+
+  late final TextEditingController _usernameController;
+  final _currentPasswordController = TextEditingController();
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    final user = AuthService.instance.currentUser;
+    _usernameController = TextEditingController(
+      text: user?.clinicalIdentifier ?? '',
+    );
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
+    _currentPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
   }
 
+  Future<void> _updateCredentials() async {
+    final newPass = _newPasswordController.text.isEmpty
+        ? null
+        : _newPasswordController.text;
+
+    if (newPass != null && newPass != _confirmPasswordController.text) {
+      setState(() => _errorMessage = 'New passwords do not match.');
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+      _successMessage = null;
+    });
+
+    final error = await AuthService.instance.updateCredentials(
+      clinicalIdentifier: _usernameController.text,
+      currentPassword: _currentPasswordController.text.isEmpty
+          ? null
+          : _currentPasswordController.text,
+      newPassword: newPass,
+    );
+
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    if (error != null) {
+      setState(() => _errorMessage = error);
+    } else {
+      _currentPasswordController.clear();
+      _newPasswordController.clear();
+      _confirmPasswordController.clear();
+      setState(() => _successMessage = 'Credentials updated successfully.');
+    }
+  }
+
+  Future<void> _logout() async {
+    await AuthService.instance.logout();
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.instance.currentUser;
+
     return Scaffold(
       backgroundColor: AppColors.surface,
       appBar: _buildAppBar(),
@@ -38,20 +104,76 @@ class _ProfileScreenState extends State<ProfileScreen> {
           children: [
             Text('Account Settings', style: AppTextStyles.headlineMd),
             const SizedBox(height: 10),
-            _buildProviderAccessChip(),
+            _buildProviderAccessChip(user?.role ?? 'Provider'),
             const SizedBox(height: 8),
+            if (user != null) ...[
+              Text(
+                user.fullName,
+                style: AppTextStyles.titleMd,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                user.email,
+                style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+              ),
+              const SizedBox(height: 8),
+            ],
             Text(
-              'Manage your clinical credentials and security preferences for the Vitalis ecosystem.',
+              'Manage your clinical credentials and security preferences.',
               style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
             ),
             const SizedBox(height: 28),
             _buildIdentifierSection(),
             const SizedBox(height: 20),
             _buildSecuritySection(),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.errorContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: AppTextStyles.labelMd.copyWith(color: AppColors.error),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (_successMessage != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.stableGreenContainer,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline_rounded, color: AppColors.stableGreen, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _successMessage!,
+                        style: AppTextStyles.labelMd.copyWith(color: AppColors.stableGreen),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 28),
             GradientButton(
-              label: 'Update Credentials',
-              onPressed: () {},
+              label: _isSaving ? 'Updating...' : 'Update Credentials',
+              onPressed: _isSaving ? null : _updateCredentials,
               icon: const Icon(Icons.lock_outline_rounded, color: Colors.white, size: 18),
             ),
             const SizedBox(height: 16),
@@ -85,17 +207,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ],
       ),
-      actions: [
-        IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.notifications_none_rounded, size: 24),
-        ),
-        const SizedBox(width: 8),
-      ],
     );
   }
 
-  Widget _buildProviderAccessChip() {
+  Widget _buildProviderAccessChip(String role) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
@@ -103,7 +218,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        'PROVIDER ACCESS',
+        role.toUpperCase(),
         style: AppTextStyles.labelSm.copyWith(
           color: AppColors.primary,
           fontWeight: FontWeight.w700,
@@ -172,8 +287,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Security Update',
+            'Change Password',
             style: AppTextStyles.headlineSm.copyWith(fontSize: 16),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Leave blank to keep your current password.',
+            style: AppTextStyles.bodySm.copyWith(color: AppColors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 14),
+          _fieldLabel('CURRENT PASSWORD'),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _currentPasswordController,
+            obscureText: _obscureCurrent,
+            style: AppTextStyles.bodyMd,
+            decoration: InputDecoration(
+              hintText: 'Your current password',
+              hintStyle: AppTextStyles.bodyMd.copyWith(
+                color: AppColors.onSurfaceVariant,
+              ),
+              prefixIcon: const Icon(
+                Icons.lock_outline_rounded,
+                color: AppColors.onSurfaceVariant,
+                size: 18,
+              ),
+              suffixIcon: GestureDetector(
+                onTap: () => setState(() => _obscureCurrent = !_obscureCurrent),
+                child: Icon(
+                  _obscureCurrent
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: AppColors.onSurfaceVariant,
+                  size: 18,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           _fieldLabel('NEW PASSWORD'),
@@ -205,7 +354,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 14),
-          _fieldLabel('CONFIRM PASSWORD'),
+          _fieldLabel('CONFIRM NEW PASSWORD'),
           const SizedBox(height: 6),
           TextField(
             controller: _confirmPasswordController,
@@ -240,12 +389,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildLogoutButton(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-          (_) => false,
-        );
-      },
+      onTap: _logout,
       child: Container(
         width: double.infinity,
         height: 52,

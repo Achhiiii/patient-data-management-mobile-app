@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../models/patient.dart';
+import '../../services/patient_service.dart';
 import 'patient_details_screen.dart';
 import 'add_patient_screen.dart';
 
@@ -14,13 +15,27 @@ class PatientListScreen extends StatefulWidget {
 
 class _PatientListScreenState extends State<PatientListScreen> {
   String _searchQuery = '';
+  late Future<List<Patient>> _patientsFuture;
 
-  List<Patient> get _filtered {
-    if (_searchQuery.isEmpty) return placeholderPatients;
-    return placeholderPatients.where((p) {
-      return p.fullName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          p.primaryDiagnosis.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          p.id.toLowerCase().contains(_searchQuery.toLowerCase());
+  @override
+  void initState() {
+    super.initState();
+    _patientsFuture = PatientService.instance.getAllPatients();
+  }
+
+  void _refresh() {
+    setState(() {
+      _patientsFuture = PatientService.instance.getAllPatients();
+    });
+  }
+
+  List<Patient> _filter(List<Patient> patients) {
+    if (_searchQuery.isEmpty) return patients;
+    final q = _searchQuery.toLowerCase();
+    return patients.where((p) {
+      return p.fullName.toLowerCase().contains(q) ||
+          p.primaryDiagnosis.toLowerCase().contains(q) ||
+          p.id.toLowerCase().contains(q);
     }).toList();
   }
 
@@ -52,15 +67,33 @@ class _PatientListScreenState extends State<PatientListScreen> {
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: _filtered.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-                    itemCount: _filtered.length,
-                    itemBuilder: (context, index) {
-                      return _buildPatientCard(_filtered[index]);
-                    },
-                  ),
+            child: FutureBuilder<List<Patient>>(
+              future: _patientsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Failed to load patients',
+                      style: AppTextStyles.bodyMd.copyWith(
+                        color: AppColors.onSurfaceVariant,
+                      ),
+                    ),
+                  );
+                }
+                final patients = _filter(snapshot.data ?? []);
+                if (patients.isEmpty) return _buildEmptyState();
+                return ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
+                  itemCount: patients.length,
+                  itemBuilder: (context, index) {
+                    return _buildPatientCard(patients[index]);
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -93,8 +126,8 @@ class _PatientListScreenState extends State<PatientListScreen> {
       ),
       actions: [
         IconButton(
-          onPressed: () {},
-          icon: const Icon(Icons.notifications_none_rounded, size: 24),
+          onPressed: _refresh,
+          icon: const Icon(Icons.refresh_rounded, size: 22),
         ),
         const SizedBox(width: 8),
       ],
@@ -121,13 +154,14 @@ class _PatientListScreenState extends State<PatientListScreen> {
 
   Widget _buildPatientCard(Patient patient) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => PatientDetailsScreen(patient: patient),
+            builder: (_) => PatientDetailsScreen(patientId: patient.id),
           ),
         );
+        _refresh();
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -182,19 +216,26 @@ class _PatientListScreenState extends State<PatientListScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        patient.id,
-                        style: AppTextStyles.bodySm.copyWith(
-                          color: AppColors.onSurfaceVariant,
+                      Expanded(
+                        child: Text(
+                          patient.id.substring(0, 8).toUpperCase(),
+                          style: AppTextStyles.bodySm.copyWith(
+                            color: AppColors.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    patient.primaryDiagnosis,
+                    patient.primaryDiagnosis.isEmpty
+                        ? 'No diagnosis recorded'
+                        : patient.primaryDiagnosis,
                     style: AppTextStyles.labelMd.copyWith(
-                      color: AppColors.primary,
+                      color: patient.primaryDiagnosis.isEmpty
+                          ? AppColors.onSurfaceVariant
+                          : AppColors.primary,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -268,11 +309,12 @@ class _PatientListScreenState extends State<PatientListScreen> {
 
   Widget _buildFab() {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           MaterialPageRoute(builder: (_) => const AddPatientScreen()),
         );
+        _refresh();
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -314,14 +356,16 @@ class _PatientListScreenState extends State<PatientListScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            'No patients found',
+            _searchQuery.isEmpty ? 'No patients yet' : 'No patients found',
             style: AppTextStyles.headlineSm.copyWith(
               color: AppColors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 4),
           Text(
-            'Try a different search term',
+            _searchQuery.isEmpty
+                ? 'Tap + Add New Entry to register a patient'
+                : 'Try a different search term',
             style: AppTextStyles.bodyMd.copyWith(
               color: AppColors.onSurfaceVariant,
             ),

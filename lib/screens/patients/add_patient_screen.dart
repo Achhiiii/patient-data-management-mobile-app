@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
+import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
+import '../../models/patient.dart';
+import '../../services/patient_service.dart';
 
 class AddPatientScreen extends StatefulWidget {
   const AddPatientScreen({super.key});
@@ -13,12 +17,15 @@ class AddPatientScreen extends StatefulWidget {
 class _AddPatientScreenState extends State<AddPatientScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedGender;
+  String? _selectedBloodGroup;
+  String? _selectedTemperature;
   double _heartRate = 72;
+  DateTime? _dateOfBirth;
+  bool _isSaving = false;
+  String? _errorMessage;
   final _nameController = TextEditingController();
-  final _ageController = TextEditingController();
   final _phoneController = TextEditingController();
   final _bloodPressureController = TextEditingController(text: '120/80');
-  final _temperatureController = TextEditingController();
   final _historyController = TextEditingController();
   final _allergiesController = TextEditingController();
   final _medicationsController = TextEditingController();
@@ -26,26 +33,173 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
   int get _completedFields {
     int count = 0;
     if (_nameController.text.isNotEmpty) count++;
-    if (_ageController.text.isNotEmpty) count++;
+    if (_dateOfBirth != null) count++;
     if (_selectedGender != null) count++;
     if (_phoneController.text.isNotEmpty) count++;
+    if (_selectedBloodGroup != null) count++;
     if (_bloodPressureController.text.isNotEmpty) count++;
     if (_historyController.text.isNotEmpty) count++;
     if (_allergiesController.text.isNotEmpty) count++;
     if (_medicationsController.text.isNotEmpty) count++;
-    if (_temperatureController.text.isNotEmpty) count++;
     return count;
   }
 
   static const int _totalFields = 9;
 
+  double _tempStringToDouble(String? temp) {
+    if (temp == null) return 37.0;
+    if (temp.contains('Hypothermia')) return 35.0;
+    if (temp.contains('Normal')) return 37.0;
+    if (temp.contains('Low Fever')) return 38.0;
+    if (temp.contains('Moderate Fever')) return 39.0;
+    if (temp.contains('High Fever')) return 40.0;
+    return 37.0;
+  }
+
+  Future<void> _savePatient() async {
+    if (_nameController.text.trim().isEmpty ||
+        _dateOfBirth == null ||
+        _selectedGender == null ||
+        _phoneController.text.trim().isEmpty ||
+        _selectedBloodGroup == null) {
+      setState(() => _errorMessage = 'Please fill in all required fields.');
+      return;
+    }
+
+    setState(() { _isSaving = true; _errorMessage = null; });
+
+    try {
+      const uuid = Uuid();
+      final currentUser = AuthService.instance.currentUser!;
+      final now = DateTime.now();
+      final patientId = uuid.v4();
+
+      final gender = Gender.values.firstWhere(
+        (g) => g.name.toLowerCase() == _selectedGender!.toLowerCase(),
+        orElse: () => Gender.other,
+      );
+
+      final patient = Patient(
+        id: patientId,
+        fullName: _nameController.text.trim(),
+        dateOfBirth: _dateOfBirth!,
+        gender: gender,
+        phone: _phoneController.text.trim(),
+        bloodGroup: _selectedBloodGroup!,
+        status: PatientStatus.stable,
+        primaryDiagnosis: _historyController.text.trim(),
+        createdBy: currentUser.id,
+        createdAt: now,
+      );
+
+      final firstVisit = Visit(
+        id: uuid.v4(),
+        patientId: patientId,
+        recordedBy: currentUser.clinicalIdentifier,
+        visitDate: now,
+        chiefComplaint: null,
+        diagnosis: _historyController.text.trim().isEmpty
+            ? 'Initial Registration'
+            : _historyController.text.trim(),
+        notes: _historyController.text.trim(),
+        heartRate: _heartRate.round(),
+        temperature: _tempStringToDouble(_selectedTemperature),
+        bloodPressure: _bloodPressureController.text.trim().isEmpty
+            ? '120/80'
+            : _bloodPressureController.text.trim(),
+        weight: 0.0,
+        patientStatus: PatientStatus.stable,
+      );
+
+      // Parse simple allergy text into allergy records
+      final allergies = <Allergy>[];
+      if (_allergiesController.text.trim().isNotEmpty) {
+        final allergenNames = _allergiesController.text
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty);
+        for (final name in allergenNames) {
+          allergies.add(Allergy(
+            id: uuid.v4(),
+            patientId: patientId,
+            allergenName: name,
+            severity: AllergySeverity.moderate,
+            status: AllergyStatus.active,
+            recordedBy: currentUser.clinicalIdentifier,
+            createdAt: now,
+          ));
+        }
+      }
+
+      // Parse simple medication text into medication records
+      final medications = <Medication>[];
+      if (_medicationsController.text.trim().isNotEmpty) {
+        final medNames = _medicationsController.text
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty);
+        for (final name in medNames) {
+          medications.add(Medication(
+            id: uuid.v4(),
+            patientId: patientId,
+            medicationName: name,
+            dosage: 'As directed',
+            frequency: 'As directed',
+            startDate: now,
+            status: MedicationStatus.active,
+            prescribedBy: currentUser.clinicalIdentifier,
+          ));
+        }
+      }
+
+      await PatientService.instance.createPatient(
+        patient: patient,
+        firstVisit: firstVisit,
+        allergies: allergies,
+        medications: medications,
+      );
+
+      if (mounted) Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+          _errorMessage = 'Failed to save patient. Please try again.';
+        });
+      }
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  Future<void> _pickDOB() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(1990),
+      firstDate: DateTime(1920),
+      lastDate: DateTime.now(),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(
+            primary: AppColors.primary,
+            onPrimary: Colors.white,
+            surface: AppColors.surface,
+          ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dateOfBirth = picked);
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
-    _ageController.dispose();
     _phoneController.dispose();
     _bloodPressureController.dispose();
-    _temperatureController.dispose();
     _historyController.dispose();
     _allergiesController.dispose();
     _medicationsController.dispose();
@@ -85,10 +239,32 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
               _buildSectionLabel('Clinical History & Medications', Icons.history_edu_rounded),
               const SizedBox(height: 14),
               _buildClinicalSection(),
+              if (_errorMessage != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.errorContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: AppTextStyles.labelMd.copyWith(color: AppColors.error),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 32),
               GradientButton(
-                label: 'Save Patient Record',
-                onPressed: () => Navigator.pop(context),
+                label: _isSaving ? 'Saving...' : 'Save Patient Record',
+                onPressed: _isSaving ? null : _savePatient,
                 icon: const Icon(
                   Icons.save_outlined,
                   color: Colors.white,
@@ -250,16 +426,33 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
           TextField(
             controller: _nameController,
             style: AppTextStyles.bodyMd,
-            decoration: _inputDecoration('e.g. Dr. Johnson Kalule'),
+            textCapitalization: TextCapitalization.words,
+            decoration: _inputDecoration('e.g. Johnson Kalule'),
           ),
           const SizedBox(height: 14),
-          _fieldLabel('AGE *'),
+          _fieldLabel('DATE OF BIRTH *'),
           const SizedBox(height: 6),
-          TextField(
-            controller: _ageController,
-            keyboardType: TextInputType.number,
-            style: AppTextStyles.bodyMd,
-            decoration: _inputDecoration('YY'),
+          GestureDetector(
+            onTap: _pickDOB,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.calendar_today_outlined, size: 16, color: AppColors.onSurfaceVariant),
+                  const SizedBox(width: 10),
+                  Text(
+                    _dateOfBirth != null ? _formatDate(_dateOfBirth!) : 'Select date of birth',
+                    style: AppTextStyles.bodyMd.copyWith(
+                      color: _dateOfBirth != null ? AppColors.onSurface : AppColors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 14),
           _fieldLabel('GENDER *'),
@@ -303,6 +496,34 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
                 Icons.phone_outlined,
                 color: AppColors.onSurfaceVariant,
                 size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _fieldLabel('BLOOD GROUP *'),
+          const SizedBox(height: 6),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String>(
+                value: _selectedBloodGroup,
+                isExpanded: true,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                borderRadius: BorderRadius.circular(10),
+                hint: Text(
+                  'e.g. O+, AB-',
+                  style: AppTextStyles.bodyMd.copyWith(color: AppColors.onSurfaceVariant),
+                ),
+                items: ['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((g) {
+                  return DropdownMenuItem(
+                    value: g,
+                    child: Text(g, style: AppTextStyles.bodyMd),
+                  );
+                }).toList(),
+                onChanged: (v) => setState(() => _selectedBloodGroup = v),
               ),
             ),
           ),
@@ -471,7 +692,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
             ),
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
-                value: _temperatureController.text.isEmpty ? null : _temperatureController.text,
+                value: _selectedTemperature,
                 isExpanded: true,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 borderRadius: BorderRadius.circular(10),
@@ -493,7 +714,7 @@ class _AddPatientScreenState extends State<AddPatientScreen> {
                     child: Text(t, style: AppTextStyles.bodyMd),
                   );
                 }).toList(),
-                onChanged: (v) => setState(() => _temperatureController.text = v ?? ''),
+                onChanged: (v) => setState(() => _selectedTemperature = v),
               ),
             ),
           ),

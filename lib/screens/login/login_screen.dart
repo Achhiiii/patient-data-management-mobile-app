@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../core/auth/auth_service.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/gradient_button.dart';
 import '../shell/app_shell.dart';
+import 'create_account_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,6 +16,9 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
+  bool _isLoading = false;
+  String? _errorMessage;
+
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
@@ -22,6 +27,26 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _login() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final error = await AuthService.instance.login(
+      _emailController.text,
+      _passwordController.text,
+    );
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    if (error != null) {
+      setState(() => _errorMessage = error);
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AppShell()),
+      );
+    }
   }
 
   @override
@@ -41,16 +66,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     _buildLogo(),
                     const SizedBox(height: 36),
                     _buildForm(),
+                    if (_errorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      _buildErrorBanner(_errorMessage!),
+                    ],
                     const SizedBox(height: 28),
                     GradientButton(
-                      label: 'Login to Dashboard',
-                      onPressed: () {
-                        Navigator.of(context).pushReplacement(
-                          MaterialPageRoute(
-                            builder: (_) => const AppShell(),
-                          ),
-                        );
-                      },
+                      label: _isLoading ? 'Signing in...' : 'Login to Dashboard',
+                      onPressed: _isLoading ? null : _login,
                     ),
                     const SizedBox(height: 28),
                     _buildCreateAccount(),
@@ -62,6 +85,28 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildErrorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: AppTextStyles.labelMd.copyWith(color: AppColors.error),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -141,16 +186,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: AppColors.onSurfaceVariant,
                 ),
               ),
-              GestureDetector(
-                onTap: () {},
-                child: Text(
-                  'Forgot Password?',
-                  style: AppTextStyles.labelMd.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -158,6 +193,7 @@ class _LoginScreenState extends State<LoginScreen> {
             controller: _passwordController,
             obscureText: _obscurePassword,
             style: AppTextStyles.bodyMd,
+            onSubmitted: (_) => _login(),
             decoration: InputDecoration(
               hintText: '••••••••••',
               hintStyle: AppTextStyles.bodyMd.copyWith(
@@ -200,7 +236,14 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CreateAccountScreen(),
+                ),
+              );
+            },
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -251,7 +294,7 @@ class _LoginScreenState extends State<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '1,200+ STAFF ONLINE',
+                  'SECURE & PRIVATE',
                   style: AppTextStyles.labelMd.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w700,

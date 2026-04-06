@@ -3,7 +3,7 @@ import 'package:patient_management_system/main.dart';
 
 void main() {
   testWidgets('App renders login screen', (WidgetTester tester) async {
-    await tester.pumpWidget(const PatientManagementApp());
+    await tester.pumpWidget(const PatientManagementApp(isLoggedIn: false));
     expect(find.text('Vitalis Clinical'), findsOneWidget);
   });
 }

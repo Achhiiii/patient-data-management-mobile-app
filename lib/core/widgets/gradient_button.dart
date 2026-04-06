@@ -4,7 +4,7 @@ import '../theme/app_text_styles.dart';
 
 class GradientButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final double? width;
   final double height;
   final Widget? icon;
@@ -12,7 +12,7 @@ class GradientButton extends StatelessWidget {
   const GradientButton({
     super.key,
     required this.label,
-    required this.onPressed,
+    this.onPressed,
     this.width,
     this.height = 52,
     this.icon,
@@ -26,7 +26,9 @@ class GradientButton extends StatelessWidget {
         width: width ?? double.infinity,
         height: height,
         decoration: BoxDecoration(
-          gradient: AppColors.signatureGradient,
+          gradient: onPressed == null
+              ? const LinearGradient(colors: [Color(0xFFB0B0B0), Color(0xFF909090)])
+              : AppColors.signatureGradient,
           borderRadius: BorderRadius.circular(10),
           boxShadow: [
             BoxShadow(
