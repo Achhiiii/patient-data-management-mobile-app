@@ -19,6 +19,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
   PatientStatus _selectedStatus = PatientStatus.stable;
   double _heartRate = 72;
   String? _tempRange;
+  String? _validationError;
 
   final _complaintController = TextEditingController();
   final _diagnosisController = TextEditingController();
@@ -49,7 +50,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
             const SizedBox(height: 20),
             _buildPatientSummary(),
             const SizedBox(height: 24),
-            _buildSectionLabel('Chief Complaint & Diagnosis', Icons.report_problem_outlined),
+            _buildSectionLabel('Reason for Visit & Diagnosis', Icons.report_problem_outlined),
             const SizedBox(height: 14),
             _buildComplaintSection(),
             const SizedBox(height: 24),
@@ -64,6 +65,20 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
             _buildSectionLabel('Patient Status After Visit', Icons.flag_outlined),
             const SizedBox(height: 14),
             _buildStatusSelector(),
+            if (_validationError != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: AppColors.errorContainer, borderRadius: BorderRadius.circular(10)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_validationError!, style: AppTextStyles.labelMd.copyWith(color: AppColors.error))),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 32),
             GradientButton(
               label: 'Save Visit Record',
@@ -177,7 +192,7 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _fieldLabel('CHIEF COMPLAINT'),
+          _fieldLabel('REASON FOR VISIT'),
           const SizedBox(height: 6),
           TextField(
             controller: _complaintController,
@@ -420,6 +435,17 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
   }
 
   void _saveVisit() {
+    // Validate required fields
+    if (_diagnosisController.text.trim().isEmpty) {
+      setState(() => _validationError = 'Diagnosis is required before saving a visit.');
+      return;
+    }
+    if (_bpController.text.trim().isEmpty) {
+      setState(() => _validationError = 'Blood pressure is required.');
+      return;
+    }
+    setState(() => _validationError = null);
+
     final currentUser = AuthService.instance.currentUser;
     final newVisit = Visit(
       id: const Uuid().v4(),

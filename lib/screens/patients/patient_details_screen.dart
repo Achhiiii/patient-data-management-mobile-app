@@ -37,10 +37,8 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     }
   }
 
-  List<Allergy> get _criticalActiveAllergies => (_patient?.allergies ?? [])
-      .where((a) =>
-          a.severity == AllergySeverity.critical &&
-          a.status == AllergyStatus.active)
+  List<Allergy> get _activeAllergies => (_patient?.allergies ?? [])
+      .where((a) => a.status == AllergyStatus.active)
       .toList();
 
   List<Medication> get _activeMedications =>
@@ -548,16 +546,15 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
     );
   }
 
-  // ── Critical Allergies ──────────────────────────────────────────────────────
+  // ── Active Allergies ────────────────────────────────────────────────────────
 
   Widget _buildCriticalAllergies() {
-    final critical = _criticalActiveAllergies;
-    final totalActive =
-        (_patient?.allergies ?? []).where((a) => a.status == AllergyStatus.active).length;
+    final active = _activeAllergies;
+    final totalActive = active.length;
 
     return _sectionCard(
       icon: Icons.warning_amber_rounded,
-      title: 'Critical Allergies',
+      title: 'Active Allergies',
       accentColor: AppColors.error,
       trailing: GestureDetector(
         onTap: () {
@@ -566,7 +563,6 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
             patient: _patient!,
             allergies: _patient!.allergies,
             onUpdated: (updated) async {
-              // Persist adds and status changes
               final existing = {for (final a in _patient!.allergies) a.id: a};
               for (final a in updated) {
                 if (!existing.containsKey(a.id)) {
@@ -591,22 +587,19 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
               const SizedBox(width: 4),
               Text(
                 'Manage${totalActive > 0 ? ' ($totalActive)' : ''}',
-                style: AppTextStyles.labelSm.copyWith(
-                  color: AppColors.error,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: AppTextStyles.labelSm.copyWith(color: AppColors.error, fontWeight: FontWeight.w700),
               ),
             ],
           ),
         ),
       ),
-      child: critical.isEmpty
+      child: active.isEmpty
           ? Row(
               children: [
                 const Icon(Icons.check_circle_outline_rounded, color: AppColors.stableGreen, size: 16),
                 const SizedBox(width: 6),
                 Text(
-                  'No critical active allergies recorded.',
+                  'No active allergies recorded.',
                   style: AppTextStyles.bodyMd.copyWith(color: AppColors.onSurfaceVariant),
                 ),
               ],
@@ -614,29 +607,37 @@ class _PatientDetailsScreenState extends State<PatientDetailsScreen> {
           : Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: critical.map((a) => _allergyPill(a)).toList(),
+              children: active.map((a) => _allergyPill(a)).toList(),
             ),
     );
   }
 
   Widget _allergyPill(Allergy allergy) {
+    late Color bg; late Color text; late String severityLabel;
+    switch (allergy.severity) {
+      case AllergySeverity.critical:
+        bg = AppColors.errorContainer; text = AppColors.error; severityLabel = 'Critical';
+      case AllergySeverity.moderate:
+        bg = AppColors.warningContainer; text = AppColors.warning; severityLabel = 'Moderate';
+      case AllergySeverity.mild:
+        bg = AppColors.observationBlueContainer; text = AppColors.observationBlue; severityLabel = 'Mild';
+    }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-      decoration: BoxDecoration(
-        color: AppColors.errorContainer,
-        borderRadius: BorderRadius.circular(999),
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(999)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.block_rounded, color: AppColors.error, size: 12),
+          Icon(Icons.block_rounded, color: text, size: 12),
           const SizedBox(width: 5),
           Text(
             allergy.allergenName,
-            style: AppTextStyles.labelMd.copyWith(
-              color: AppColors.error,
-              fontWeight: FontWeight.w700,
-            ),
+            style: AppTextStyles.labelMd.copyWith(color: text, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '· $severityLabel',
+            style: AppTextStyles.labelSm.copyWith(color: text.withAlpha(180)),
           ),
         ],
       ),
