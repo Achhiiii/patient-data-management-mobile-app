@@ -5,6 +5,10 @@
 #include <gdk/gdkx.h>
 #endif
 
+#include <gdk-pixbuf/gdk-pixbuf.h>
+#include <libgen.h>
+#include <string.h>
+
 #include "flutter/generated_plugin_registrant.h"
 
 struct _MyApplication {
@@ -45,14 +49,31 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "patient_management_system");
+    gtk_header_bar_set_title(header_bar, "Health Chain");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "patient_management_system");
+    gtk_window_set_title(window, "Health Chain");
   }
 
   gtk_window_set_default_size(window, 1280, 720);
+
+  // Set the window icon using the bundled app_icon.png
+  {
+    // Resolve the icon path relative to the running executable
+    char exe_path[4096] = {0};
+    ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    if (len > 0) {
+      char* exe_dir = dirname(exe_path);
+      char icon_path[4096];
+      snprintf(icon_path, sizeof(icon_path), "%s/app_icon.png", exe_dir);
+      GdkPixbuf* icon = gdk_pixbuf_new_from_file(icon_path, nullptr);
+      if (icon) {
+        gtk_window_set_icon(window, icon);
+        g_object_unref(icon);
+      }
+    }
+  }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

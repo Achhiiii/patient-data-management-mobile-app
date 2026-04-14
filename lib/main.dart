@@ -28,7 +28,7 @@ class PatientManagementApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Clinical Precision',
+      title: 'Health Chain',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       home: isLoggedIn ? const AppShell() : const LoginScreen(),
